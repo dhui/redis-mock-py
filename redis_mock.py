@@ -3,6 +3,9 @@ A mock for Redis.
 This mock only works with the redis-py library.
 
 Note: This module is not thread safe
+Currently only a few Redis sorted set commands are supported (ZADD, ZRANGE, ZRANGEBYSCORE, ZREVRANGE, ZREVRANGEBYSCORE)
+I will be adding more commands in the future.
+If you want more commands added, send me a message via github (username: dhui).
 
 
 Usage:
@@ -33,7 +36,6 @@ class TestSuite(unittest.TestCase):
         mock_execute_command.side_effect = redis_mock.execute_command
 
 
-TODO: Add unit tests for this mock
 """
 
 import types
@@ -78,7 +80,7 @@ class RedisSortedSetMock:
         """
         Helper function to sort the internal dictionary by the score
         """
-        all_items = self.dict.items()
+        all_items = [(key, float(value)) for key, value in self.dict.iteritems()]
         all_items.sort(key=lambda x: x[1], reverse=reverse)  # sort by score
         return all_items
 
@@ -89,17 +91,22 @@ class RedisSortedSetMock:
         # The way Redis sorted sets range works is slightly different for slices so it's not a direct translation.
         all_items = self.__get_sorted_by_score(reverse=reverse)
         if start >= 0 and end >= 0:
+            end += 1
             all_items = all_items[start:end]
         if start < 0 and end < 0:
             # both negative
             range_size = end - start
             if range_size < 0:
                 return []  # end is greater than start, so this is not valid
+            if abs(start) >= len(all_items):
+                return []  # the start is too negative
             all_items = all_items[start:][:range_size + 1]
         if start < 0 and end >= 0:
             return []  # Redis doesn't return anything for this
         if start >= 0 and end < 0:
-            end = len(all_items) + end  # calculate the new end index
+            end = len(all_items) + end + 1 # calculate the new end index
+            if end <= start:
+                return []
             all_items = all_items[start:end]
 
         if withscores:
@@ -209,6 +216,12 @@ def execute_command(*args, **options):
             return []
         else:
             return RedisMock.db[key].range(start, stop, withscores)
+    elif command == "ZREVRANGE":
+        key, start, stop, withscores = __parse_range_command(*args, **options)
+        if key not in RedisMock.db:
+            return []
+        else:
+            return RedisMock.db[key].range(start, stop, withscores, reverse=True)
     elif command == "ZRANGEBYSCORE":
         key, start, stop, withscores = __parse_range_command(*args, **options)
         if key not in RedisMock.db:
