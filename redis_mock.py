@@ -113,45 +113,48 @@ class RedisSortedSetMock:
             return all_items
         return [member for member, score in all_items]
 
-    def rangebyscore(self, start, end, withscores=False, reverse=False):
+    def rangebyscore(self, min, max, withscores=False, offset=None, count=None, reverse=False):
         """
         Performs the same functionality as ZRANGEBYSCORE and ZREVRANGEBYSCORE
         """
-        start_inclusive = True
-        end_inclusive = True
-        if isinstance(start, types.StringTypes):
-            parse_str = start
-            if start[0] == '(':
-                parse_str = start[1:]
-                start_inclusive = False
-            start_value = float(parse_str)
-        elif isinstance(start, ScoreTypes):
-            start_value = float(start)
+        min_inclusive = True
+        max_inclusive = True
+        if isinstance(min, types.StringTypes):
+            parse_str = min
+            if min[0] == '(':
+                parse_str = min[1:]
+                min_inclusive = False
+            min_value = float(parse_str)
+        elif isinstance(min, ScoreTypes):
+            min_value = float(min)
         else:
-            raise Exception("start in Redis sorted set rangebyscore must be a string, integer, or float")
-        if isinstance(end, types.StringTypes):
-            parse_str = end
-            if end[0] == '(':
-                parse_str = end[1:]
-                end_inclusive = False
-            end_value = float(parse_str)
-        elif isinstance(end, ScoreTypes):
-            end_value = float(end)
+            raise Exception("min in Redis sorted set rangebyscore must be a string, integer, or float")
+        if isinstance(max, types.StringTypes):
+            parse_str = max
+            if max[0] == '(':
+                parse_str = max[1:]
+                max_inclusive = False
+            max_value = float(parse_str)
+        elif isinstance(max, ScoreTypes):
+            max_value = float(max)
         else:
-            raise Exception("end in Redis sorted set rangebyscore must be a string, integer, or float")
+            raise Exception("max in Redis sorted set rangebyscore must be a string, integer, or float")
 
-        if start_value > end_value:
+        if min_value > max_value:
             return []
 
         all_items = self.__get_sorted_by_score(reverse=reverse)
-        if start_inclusive:
-            all_items = filter(lambda x: x[1] >= start_value, all_items)
+        if min_inclusive:
+            all_items = filter(lambda x: x[1] >= min_value, all_items)
         else:
-            all_items = filter(lambda x: x[1] > start_value, all_items)
-        if end_inclusive:
-            all_items = filter(lambda x: x[1] <= end_value, all_items)
+            all_items = filter(lambda x: x[1] > min_value, all_items)
+        if max_inclusive:
+            all_items = filter(lambda x: x[1] <= max_value, all_items)
         else:
-            all_items = filter(lambda x: x[1] < end_value, all_items)
+            all_items = filter(lambda x: x[1] < max_value, all_items)
+
+        if offset is not None and count is not None:
+            all_items = all_items[offset:count+offset]
 
         if withscores:
             return all_items
@@ -223,15 +226,26 @@ def execute_command(*args, **options):
         else:
             return RedisMock.db[key].range(start, stop, withscores, reverse=True)
     elif command == "ZRANGEBYSCORE":
-        key, start, stop, withscores = __parse_range_command(*args, **options)
+        key, min, max, withscores = __parse_range_command(*args, **options)
+        offset = None
+        count = None
+        if len(args) == 6:
+            offset = args[4]
+            count = args[5]
         if key not in RedisMock.db:
             return []
         else:
-            return RedisMock.db[key].rangebyscore(start, stop, withscores)
+            return RedisMock.db[key].rangebyscore(min, max, withscores, offset, count)
     elif command == "ZREVRANGEBYSCORE":
-        key, start, stop, withscores = __parse_range_command(*args, **options)
+        # the ordering for min and max are flipped for ZREVRANGEBYSCORE
+        key, max, min, withscores = __parse_range_command(*args, **options)
+        offset = None
+        count = None
+        if len(args) == 6:
+            offset = args[4]
+            count = args[5]
         if key not in RedisMock.db:
             return []
         else:
-            return RedisMock.db[key].rangebyscore(start, stop, withscores, reverse=True)
+            return RedisMock.db[key].rangebyscore(min, max, withscores, offset, count, reverse=True)
     raise Exception("Unimplemented Redis command: %s" % command)
