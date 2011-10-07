@@ -189,7 +189,7 @@ def __parse_range_command(*args, **options):
     """
     Internal helper function to parse the arguments out of a RANGE type command
     """
-    key = args[1]
+    key = str(args[1])
     start = args[2]
     stop = args[3]
     withscores = False
@@ -203,15 +203,16 @@ def execute_command(*args, **options):
     Function used to overrite the Redis execute_command function so we can mock redis
     """
     command = args[0]
+    # Redis Sorted Set commands
     if command == "ZADD":
-        key = args[1]
+        key = str(args[1])
         if key not in RedisMock.db:
             RedisMock.db[key] = RedisSortedSetMock()
             return RedisMock.db[key].add(*args[2:])
         else:
             sorted_set = RedisMock.db[key]
             if not isinstance(sorted_set, RedisSortedSetMock):
-                raise Exception("Calling ZADD on key should be of type sorted set. current type: %s" % type(sorted_set))
+                raise Exception("Calling ZADD on key %s should be of type sorted set. current type: %s" % (key, type(sorted_set)))
             return sorted_set.add(*args[2:])
     elif command == "ZRANGE":
         key, start, stop, withscores = __parse_range_command(*args, **options)
@@ -248,4 +249,74 @@ def execute_command(*args, **options):
             return []
         else:
             return RedisMock.db[key].rangebyscore(min, max, withscores, offset, count, reverse=True)
+    # Redis Set commands
+    elif command == "SADD":
+        key = str(args[1])
+        members = [str(member) for member in args[2:]]
+        if key not in RedisMock.db:
+            RedisMock.db[key] = set(members)
+            return len(members)
+        else:
+            current_set = RedisMock.db[key]
+            if not isinstance(current_set, set):
+                raise Exception("Calling SADD on key %s should be of type set. current type: %s" % (key, type(current_set)))
+            num_added = 0
+            for member in members:
+                if member in current_set:
+                    continue
+                current_set.add(member)
+                num_added += 1
+            return num_added
+    elif command == "SISMEMBER":
+        key = str(args[1])
+        member = str(args[2])
+        if key not in RedisMock.db:
+            return False
+        else:
+            current_set = RedisMock.db[key]
+            if not isinstance(current_set, set):
+                raise Exception("Calling SISMEMBER on key %s should be of type set. current type: %s" % (key, type(current_set)))
+            return member in current_set
+    elif command == "SMEMBERS":
+        key = str(args[1])
+        if key not in RedisMock.db:
+            return set()
+        else:
+            current_set = RedisMock.db[key]
+            if not isinstance(current_set, set):
+                raise Exception("Calling SMEMBERS on key %s should be of type set. current type: %s" % (key, type(current_set)))
+            return current_set
+    elif command == "SCARD":
+        key = str(args[1])
+        if key not in RedisMock.db:
+            return 0
+        else:
+            current_set = RedisMock.db[key]
+            if not isinstance(current_set, set):
+                raise Exception("Calling SCARD on key %s should be of type set. current type: %s" % (key, type(current_set)))
+            return len(current_set)
+    elif command == "SDIFF":
+        key = str(args[1])
+        keys = []
+        if len(args) > 2:
+            keys = [str(arg) for arg in args[2:]]
+        # Redis loads all of the sets before returning
+        current_set = set()
+        try:
+            current_set = RedisMock.db[key]
+        except KeyError:
+            pass
+        if not isinstance(current_set, set):
+            raise Exception("Calling SDIFF on key %s should be of type set. current type: %s" % (key, type(current_set)))
+        # accumulate the sets that we'll be diffing with
+        accumulator_set = set()
+        for key in keys:
+            try:
+                next_set = RedisMock.db[key]
+                if not isinstance(next_set, set):
+                    raise Exception("Calling SDIFF on key %s should be of type set. current type: %s" % (key, type(next_set)))
+                accumulator_set.update(next_set)
+            except KeyError:
+                pass
+        return current_set - accumulator_set
     raise Exception("Unimplemented Redis command: %s" % command)

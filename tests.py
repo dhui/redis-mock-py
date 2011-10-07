@@ -310,6 +310,8 @@ class RedisMockTest(unittest.TestCase):
         self.assertEqual(len(range), 5)
         self.assertEqual(range, expected_data[:5])
 
+        # TODO: test limit with offset and count
+
     @mock.patch.object(redis.Redis, 'execute_command')
     def test_zrevrangebyscore(self, mock_execute_command):
         mock_execute_command.side_effect = redis_mock.execute_command
@@ -455,7 +457,77 @@ class RedisMockTest(unittest.TestCase):
         self.assertEqual(len(range), 5)
         self.assertEqual(range, expected_data[5:])
 
+        # TODO: test limit with offset and count
 
+    @mock.patch.object(redis.Redis, 'execute_command')
+    def test_sadd_and_smembers(self, mock_execute_command):
+        mock_execute_command.side_effect = redis_mock.execute_command
+
+        # Test sadd with a single argument
+        self.assertEqual(redis_c.sadd("mykey", "member1"), 1)
+        self.assertEqual(redis_c.smembers("mykey"), set(["member1"]))
+
+        # Test sadd with multiple arguments
+        self.assertEqual(redis_c.sadd("mykey", "member2", "member3", "member4"), 3)
+        self.assertEqual(redis_c.smembers("mykey"), set(["member1", "member2", "member3", "member4"]))
+
+    @mock.patch.object(redis.Redis, 'execute_command')
+    def test_sismember(self, mock_execute_command):
+        mock_execute_command.side_effect = redis_mock.execute_command
+
+        self.assertEqual(redis_c.sadd("mykey", "member1", "member2", "member3", "member4"), 4)
+        self.assertTrue(redis_c.sismember("mykey", "member3"))
+        self.assertFalse(redis_c.sismember("mykey", "member5"))
+
+    @mock.patch.object(redis.Redis, 'execute_command')
+    def test_scard(self, mock_execute_command):
+        mock_execute_command.side_effect = redis_mock.execute_command
+
+        self.assertEqual(redis_c.sadd("mykey", "member1", "member2", "member3", "member4"), 4)
+        self.assertEqual(redis_c.scard("mykey"), 4)
+
+    @mock.patch.object(redis.Redis, 'execute_command')
+    def test_sdiff(self, mock_execute_command):
+        mock_execute_command.side_effect = redis_mock.execute_command
+
+        # Test edge cases
+        self.assertEqual(redis_c.sdiff("non_existant_key"), set())
+
+        self.assertEqual(redis_c.sadd("mykey1", "member1", "member2", "member3", "member4"), 4)
+        # Test empty set (i.e. non-existant set) diff
+        self.assertEqual(redis_c.sdiff("non_existant_key", "mykey1"), set())
+        # Test diff with empty set
+        self.assertEqual(redis_c.sdiff("mykey1", "non_existant_key"), redis_c.smembers("mykey1"))
+
+        self.assertEqual(redis_c.sadd("mykey2", "member3", "member4", "member5", "member6"), 4)
+        # Test normal diff with the 2nd set containing elements not in the 1st set
+        self.assertEqual(redis_c.sdiff("mykey1", "mykey2"), set(["member1", "member2"]))
+
+        self.assertEqual(redis_c.sadd("mykey3", "member3", "member4"), 2)
+        # Test normal diff with the 2nd set not containing any extra elements
+        self.assertEqual(redis_c.sdiff("mykey1", "mykey3"), set(["member1", "member2"]))
+        # Test multiple diff with overlapping key ranges
+        self.assertEqual(redis_c.sdiff("mykey1", "mykey2", "mykey3"), set(["member1", "member2"]))
+
+        self.assertEqual(redis_c.sadd("mykey4", "member5", "member6"), 2)
+        # Test diff with the 2nd set only containing elements not in the 1st set
+        self.assertEqual(redis_c.sdiff("mykey1", "mykey4"), redis_c.smembers("mykey1"))
+        # Test diff with multiple sets having overlapping key ranges
+        self.assertEqual(redis_c.sdiff("mykey1", "mykey2", "mykey3", "mykey4"), set(["member1", "member2"]))
+
+        self.assertEqual(redis_c.sadd("mykey5", "member1", "member2"), 2)
+        # Test diff where other sets make the 1st one empty
+        self.assertEqual(redis_c.sdiff("mykey1", "mykey3", "mykey5"), set())
+        # Test diff where other sets make the 1st one empty and the other sets contain extra elements
+        self.assertEqual(redis_c.sdiff("mykey1", "mykey2", "mykey3", "mykey4", "mykey5"), set())
+
+        self.assertEqual(redis_c.sadd("mykey6", "member1", "member2", "member3", "member4"), 4)
+        # Test diff where the 2nd set contains all of the elements in the first set
+        self.assertEqual(redis_c.sdiff("mykey1", "mykey6"), set())
+
+        self.assertEqual(redis_c.sadd("mykey7", "member1", "member2", "member3", "member4", "member5"), 5)
+        # Test diff where the 2nd set contains all of the elements in the first set and some extra elements
+        self.assertEqual(redis_c.sdiff("mykey1", "mykey7"), set())
 
 if __name__ == "__main__":
     unittest.main()
